@@ -1,2 +1,4 @@
 # Songbird-CSV
-A CSV-like standard that includes QOL changes like recursive keys and values
+
+A CSV-like standard that introduces flow control to reduce redundant key and
+value repetition.

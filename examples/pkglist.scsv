@@ -1,5 +1,5 @@
 #@valuePriority,false
-#@strictMode,false
+#@strictMode,true
 
 # Place packages you would like to install here, installed packages not here are
 # either system packages like `linux` (found at $NEST_GEN_ROOT/systempkgs.scsv)

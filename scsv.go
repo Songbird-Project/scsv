@@ -33,13 +33,12 @@ func ParseFile(path string) (KeyValuePairs, error) {
 		ValuePrecedence: false,
 		StrictMode:      false,
 
-		LineNumber: 0,
+		LineNumber: 1,
 	}
 	keySets := make(KeyValuePairs)
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		fileOptions.LineNumber++
 		line := scanner.Text()
 		newFlowKey := false
 		newFlowValue := false
@@ -56,8 +55,12 @@ func ParseFile(path string) (KeyValuePairs, error) {
 			fileOptions.FlowValue = ""
 		}
 
-		// Check if line is a parsing option
-		if fmt.Sprintf("%.*s", 2, line) == "#@" {
+		if len(line) == 0 {
+			fileOptions.LineNumber++
+			continue
+
+			// Check if line is a parsing option
+		} else if fmt.Sprintf("%.*s", 2, line) == "#@" {
 			keyValuePair := strings.Split(strings.TrimPrefix(line, "#@"), ",")
 			if len(keyValuePair) > 2 || len(keyValuePair) < 2 {
 				return nil, fmt.Errorf(
@@ -86,6 +89,7 @@ func ParseFile(path string) (KeyValuePairs, error) {
 
 			// Ignore comment lines
 		} else if line[0] == '#' {
+			fileOptions.LineNumber++
 			continue
 
 			// Handle other lines as key-value pairs
@@ -95,6 +99,10 @@ func ParseFile(path string) (KeyValuePairs, error) {
 			value := keyValuePair[1]
 
 			if strings.Contains(key, "|") {
+				if fileOptions.FlowKey != "" && fileOptions.StrictMode {
+					return nil, fmt.Errorf("Flow keys must be cleared before new ones are defined in strict mode: line %d", fileOptions.LineNumber)
+				}
+
 				flowKey := strings.Split(key, "|")
 				flow := flowKey[0]
 				key = flowKey[1]
@@ -123,6 +131,10 @@ func ParseFile(path string) (KeyValuePairs, error) {
 			}
 
 			if strings.Contains(value, "|") {
+				if fileOptions.FlowValue != "" && fileOptions.StrictMode {
+					return nil, fmt.Errorf("Flow values must be cleared before new ones are defined in strict mode: line %d", fileOptions.LineNumber)
+				}
+
 				flowValue := strings.Split(value, "|")
 				flow := flowValue[0]
 				value = flowValue[1]
@@ -139,9 +151,9 @@ func ParseFile(path string) (KeyValuePairs, error) {
 				}
 
 				fileOptions.FlowValue = value
-			} else if key == "" {
+			} else if value == "" {
 				if fileOptions.FlowValue != "" {
-					key = fileOptions.FlowValue
+					value = fileOptions.FlowValue
 				} else {
 					if fileOptions.StrictMode {
 						return nil, fmt.Errorf("No value found: line %d", fileOptions.LineNumber)
@@ -162,6 +174,8 @@ func ParseFile(path string) (KeyValuePairs, error) {
 
 			keySets[key] = append(keySets[key], value)
 		}
+
+		fileOptions.LineNumber++
 	}
 
 	if err := scanner.Err(); err != nil {

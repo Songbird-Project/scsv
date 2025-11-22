@@ -22,8 +22,10 @@ func main() {
 
 		fmt.Printf("%s:\n", repo)
 
-		for _, pkg := range pkgs {
-			fmt.Printf(" - %s\n", pkg)
+		for _, pkgColumns := range pkgs {
+			for _, pkg := range pkgColumns {
+				fmt.Printf(" - %s\n", pkg)
+			}
 		}
 	}
 }

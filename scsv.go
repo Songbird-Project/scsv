@@ -8,19 +8,19 @@ import (
 	"strings"
 )
 
-type CurrentFile struct {
+type FileInfo struct {
 	ValuePrecedence bool
 	StrictMode      bool
 
-	LineNumber     int
-	FlowKey        string
-	FlowKeyLines   int
-	FlowValue      string
-	FlowValueLines int
+	LineNumber   int
+	FlowKey      string
+	FlowKeyLines int
+	FlowValues   map[int][]any // map[COLUMN:[FLOW_VALUE_1,FLOW_LINES_1] COLUMN:[FLOW_VALUE_2,FLOW_LINES_2]]
+
 }
 
-// eg. map[extra:["bat", "eza"] aur:["zen-browser-bin"]]
-type KeyValuePairs map[string][]string
+// eg. map[extra:[["bat"], ["eza"]] aur:[["zen-browser-bin"]]]
+type KeyValuePairs map[string][][]string
 
 func ParseFile(path string) (KeyValuePairs, error) {
 	file, err := os.Open(path)
@@ -29,30 +29,39 @@ func ParseFile(path string) (KeyValuePairs, error) {
 	}
 	defer file.Close()
 
-	fileOptions := &CurrentFile{
+	fileOptions := &FileInfo{
 		ValuePrecedence: false,
 		StrictMode:      false,
 
 		LineNumber: 1,
+		FlowValues: make(map[int][]any),
 	}
+
 	keySets := make(KeyValuePairs)
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()
+
 		newFlowKey := false
 		newFlowValue := false
 
-		if fileOptions.FlowKeyLines > 0 {
-			fileOptions.FlowKeyLines--
-		} else if fileOptions.FlowKeyLines == 0 {
+		if fileOptions.FlowKeyLines != -1 {
+			fileOptions.FlowKeyLines -= 1
+		}
+
+		if fileOptions.FlowKeyLines == 0 {
 			fileOptions.FlowKey = ""
 		}
 
-		if fileOptions.FlowValueLines > 0 {
-			fileOptions.FlowValueLines--
-		} else if fileOptions.FlowValueLines == 0 {
-			fileOptions.FlowValue = ""
+		for key := range fileOptions.FlowValues {
+			if fileOptions.FlowValues[key][1] != -1 {
+				fileOptions.FlowValues[key][1] = fileOptions.FlowValues[key][1].(int) - 1
+			}
+
+			if fileOptions.FlowValues[key][1] == 0 {
+				delete(fileOptions.FlowValues, key)
+			}
 		}
 
 		if len(line) == 0 {
@@ -85,7 +94,9 @@ func ParseFile(path string) (KeyValuePairs, error) {
 			}
 		} else if line == "--" {
 			fileOptions.FlowKeyLines = 0
-			fileOptions.FlowValueLines = 0
+			for key := range fileOptions.FlowValues {
+				delete(fileOptions.FlowValues, key)
+			}
 
 			// Ignore comment lines
 		} else if line[0] == '#' {
@@ -96,7 +107,7 @@ func ParseFile(path string) (KeyValuePairs, error) {
 		} else {
 			keyValuePair := strings.Split(line, ",")
 			key := keyValuePair[0]
-			value := keyValuePair[1]
+			values := keyValuePair[1:]
 
 			if strings.Contains(key, "|") {
 				if fileOptions.FlowKey != "" && fileOptions.StrictMode {
@@ -119,6 +130,7 @@ func ParseFile(path string) (KeyValuePairs, error) {
 				}
 
 				fileOptions.FlowKey = key
+				newFlowKey = true
 			} else if key == "" {
 				if fileOptions.FlowKey != "" {
 					key = fileOptions.FlowKey
@@ -130,49 +142,60 @@ func ParseFile(path string) (KeyValuePairs, error) {
 				fileOptions.FlowKeyLines = 0
 			}
 
-			if strings.Contains(value, "|") {
-				if fileOptions.FlowValue != "" && fileOptions.StrictMode {
-					return nil, fmt.Errorf("Flow values must be cleared before new ones are defined in strict mode: line %d", fileOptions.LineNumber)
-				}
+			parsedValues := []string{}
 
-				flowValue := strings.Split(value, "|")
-				flow := flowValue[0]
-				value = flowValue[1]
-
-				if flow != "" {
-					flowLines, err := strconv.Atoi(flow)
-					if err != nil {
-						return nil, fmt.Errorf("Flow value must use a valid line controller if one is present: line %d", fileOptions.LineNumber)
+			for idx, value := range values {
+				if strings.Contains(value, "|") {
+					_, valueExists := fileOptions.FlowValues[idx]
+					if valueExists && fileOptions.StrictMode {
+						return nil, fmt.Errorf("Flow values must be cleared before new ones are defined in strict mode: line %d", fileOptions.LineNumber)
 					}
 
-					fileOptions.FlowValueLines = flowLines
-				} else {
-					fileOptions.FlowValueLines = -1
-				}
+					flowValue := strings.Split(value, "|")
+					flow := flowValue[0]
+					value = flowValue[1]
 
-				fileOptions.FlowValue = value
-			} else if value == "" {
-				if fileOptions.FlowValue != "" {
-					value = fileOptions.FlowValue
+					if flow != "" {
+						flowLines, err := strconv.Atoi(flow)
+						if err != nil {
+							return nil, fmt.Errorf("Flow value must use a valid line controller if one is present: line %d", fileOptions.LineNumber)
+						}
+
+						fileOptions.FlowValues[idx] = []any{value, flowLines}
+					} else {
+						fileOptions.FlowValues[idx] = []any{value, -1}
+					}
+
+					newFlowValue = true
+				} else if value == "" {
+					if len(fileOptions.FlowValues[idx]) <= 0 {
+						if fileOptions.StrictMode {
+							return nil, fmt.Errorf("No value found: line %d", fileOptions.LineNumber)
+						}
+					} else {
+						value = fileOptions.FlowValues[idx][0].(string)
+					}
 				} else {
-					if fileOptions.StrictMode {
-						return nil, fmt.Errorf("No value found: line %d", fileOptions.LineNumber)
+					if len(fileOptions.FlowValues[idx]) > 0 {
+						fileOptions.FlowValues[idx][0] = ""
+						fileOptions.FlowValues[idx][1] = 0
 					}
 				}
-			} else {
-				fileOptions.FlowValue = ""
-				fileOptions.FlowValueLines = 0
+
+				parsedValues = append(parsedValues, value)
 			}
 
-			if newFlowKey && newFlowValue {
+			if newFlowKey && newFlowValue && len(values) > 1 {
 				if fileOptions.ValuePrecedence {
 					fileOptions.FlowKeyLines = 0
 				} else {
-					fileOptions.FlowValueLines = 0
+					for key := range fileOptions.FlowValues {
+						delete(fileOptions.FlowValues, key)
+					}
 				}
 			}
 
-			keySets[key] = append(keySets[key], value)
+			keySets[key] = append(keySets[key], parsedValues)
 		}
 
 		fileOptions.LineNumber++

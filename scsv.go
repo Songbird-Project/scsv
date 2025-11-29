@@ -16,10 +16,9 @@ type FileInfo struct {
 	FlowKey      string
 	FlowKeyLines int
 	FlowValues   map[int][]any // map[COLUMN:[FLOW_VALUE_1,FLOW_LINES_1] COLUMN:[FLOW_VALUE_2,FLOW_LINES_2]]
-
 }
 
-// eg. map[extra:[["bat"], ["eza"]] aur:[["zen-browser-bin"]]]
+// eg. map[extra:[["bat", "1.2"], ["eza", "3.4"]] aur:[["zen-browser-bin", "4.3"]]]
 type KeyValuePairs map[string][][]string
 
 func ParseFile(path string) (KeyValuePairs, error) {

@@ -28,19 +28,43 @@ func ParseFile(path string) (KeyValuePairs, error) {
 	}
 	defer file.Close()
 
+	scanner := bufio.NewScanner(file)
+	return parse(func() (string, bool) {
+		if scanner.Scan() {
+			return scanner.Text(), true
+		}
+		return "", false
+	}, scanner.Err)
+}
+
+func ParseString(scsv string) (KeyValuePairs, error) {
+	lines := strings.Split(scsv, "\n")
+	idx := 0
+	return parse(func() (string, bool) {
+		if idx >= len(lines) {
+			return "", false
+		}
+		line := lines[idx]
+		idx++
+		return line, true
+	}, func() error { return nil })
+}
+
+func parse(nextLine func() (string, bool), scanErr func() error) (KeyValuePairs, error) {
 	fileOptions := &FileInfo{
 		ValuePrecedence: false,
 		StrictMode:      false,
-
-		LineNumber: 1,
-		FlowValues: make(map[int][]any),
+		LineNumber:      1,
+		FlowValues:      make(map[int][]any),
 	}
 
 	keySets := make(KeyValuePairs)
 
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
+	for {
+		line, ok := nextLine()
+		if !ok {
+			break
+		}
 
 		newFlowKey := false
 		newFlowValue := false
@@ -66,8 +90,6 @@ func ParseFile(path string) (KeyValuePairs, error) {
 		if len(line) == 0 {
 			fileOptions.LineNumber++
 			continue
-
-			// Check if line is a parsing option
 		} else if fmt.Sprintf("%.*s", 2, line) == "#@" {
 			keyValuePair := strings.Split(strings.TrimPrefix(line, "#@"), ",")
 			if len(keyValuePair) > 2 || len(keyValuePair) < 2 {
@@ -96,13 +118,9 @@ func ParseFile(path string) (KeyValuePairs, error) {
 			for key := range fileOptions.FlowValues {
 				delete(fileOptions.FlowValues, key)
 			}
-
-			// Ignore comment lines
 		} else if line[0] == '#' {
 			fileOptions.LineNumber++
 			continue
-
-			// Handle other lines as key-value pairs
 		} else {
 			keyValuePair := strings.Split(line, ",")
 			key := keyValuePair[0]
@@ -200,7 +218,7 @@ func ParseFile(path string) (KeyValuePairs, error) {
 		fileOptions.LineNumber++
 	}
 
-	if err := scanner.Err(); err != nil {
+	if err := scanErr(); err != nil {
 		return nil, err
 	}
 
